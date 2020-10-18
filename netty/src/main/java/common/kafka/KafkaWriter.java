@@ -21,7 +21,7 @@ public class KafkaWriter {
         //1, which means that the producer gets an acknowledgement after the leader replica has received the data.
         //-1, which means that the producer gets an acknowledgement after all in-sync replicas have received the data.
         DEFAULT_KAFKA_PROPERTIES.put("request.required.acks", "1");
-        DEFAULT_KAFKA_PROPERTIES.put("partitioner.class", "common.kafka.KafkaPartitioner");
+        DEFAULT_KAFKA_PROPERTIES.put("partitioner.class", "common.kafka.WriterPartitioner");
         DEFAULT_KAFKA_PROPERTIES.put("key.serializer.class", "kafka.serializer.StringEncoder");
     }
 
