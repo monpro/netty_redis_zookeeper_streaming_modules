@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
+import common.ExecutorHelper;
 import common.RestHelper;
 import common.kafka.KafkaWriter;
 import io.netty.buffer.ByteBuf;
@@ -13,8 +14,12 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
+import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import static io.netty.handler.codec.http.HttpHeaders.Names.CONTENT_TYPE;
 import static io.netty.handler.codec.http.HttpMethod.OPTIONS;
@@ -79,7 +84,7 @@ public class AsyncServerHandler extends SimpleChannelInboundHandler<HttpRequest>
     }
 
     //step3: send transformed event to kafka
-    private void send(ChannelHandlerContext context, HttpRequest request,
+    private Void send(ChannelHandlerContext context, HttpRequest request,
                       JSONObject event) {
         logger.info(String.format("send thread[%s]", Thread.currentThread().toString()));
         Preconditions.checkNotNull(event, "event is null");
@@ -92,6 +97,7 @@ public class AsyncServerHandler extends SimpleChannelInboundHandler<HttpRequest>
             sendResponse(context, INTERNAL_SERVER_ERROR,
                     RestHelper.genResponseString(500, "send to kafka failure"));
         }
+        return null;
     }
 
     private static void sendResponse(ChannelHandlerContext context, HttpResponseStatus status, String msg) {
@@ -110,8 +116,60 @@ public class AsyncServerHandler extends SimpleChannelInboundHandler<HttpRequest>
     }
 
 
-    @Override
-    protected void channelRead0(ChannelHandlerContext channelHandlerContext, HttpRequest httpRequest) throws Exception {
+    final private Executor decoderExecutor = ExecutorHelper.createExecutor(2, "decoder");
+    final private Executor ectExecutor = ExecutorHelper.createExecutor(8, "ect");
+    final private Executor sendExecutor = ExecutorHelper.createExecutor(2, "send");
 
+    // inner static helper class
+    private static class ReferenceController {
+        private final ChannelHandlerContext context;
+        private final HttpRequest request;
+
+        public ReferenceController(ChannelHandlerContext context, HttpRequest request) {
+            this.context = context;
+            this.request = request;
+        }
+
+        public void retain() {
+            // Increase the reference count of this object, default 1
+            ReferenceCountUtil.retain(context);
+            ReferenceCountUtil.retain(request);
+        }
+
+        public void release() {
+            // Decreases the reference count by 1
+            // and de-allocates this object if the reference count reaches at 0.
+            ReferenceCountUtil.release(context);
+            ReferenceCountUtil.release(request);
+        }
+    }
+
+
+    @Override
+    protected void channelRead0(ChannelHandlerContext context, HttpRequest httpRequest) throws Exception {
+        logger.info(String.format("current thread[%s]", Thread.currentThread().toString()));
+        final ReferenceController referenceController = new ReferenceController(context, httpRequest);
+        referenceController.retain();
+
+        CompletableFuture
+                .supplyAsync(() -> this.decode(context, httpRequest), this.decoderExecutor)
+                .thenApplyAsync(e -> this.doExtractCleanTransform(context, httpRequest, e), this.ectExecutor)
+                .thenApplyAsync(e -> this.send(context, httpRequest, e), this.sendExecutor)
+                .thenAccept(e -> referenceController.release())
+                .exceptionally(ex -> {
+                    try {
+                        logger.error(String.format("exception caught - [%s]", ex));
+                        if(RequestException.class.isInstance(ex.getCause())) {
+                            RequestException re = (RequestException)ex.getCause();
+                            sendResponse(context, HttpResponseStatus.valueOf(re.getCode()), re.getResponse());
+                        } else {
+                            sendResponse(context, INTERNAL_SERVER_ERROR,
+                                    RestHelper.genResponseString(500, "internal server error"));
+                        }
+                        return null;
+                    } finally {
+                        referenceController.release();
+                    }
+                });
     }
 }
