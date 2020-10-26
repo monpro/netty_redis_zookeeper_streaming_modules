@@ -6,6 +6,7 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import common.ExecutorHelper;
 import common.RestHelper;
+import common.concurrency.BackPressureExecutor;
 import common.kafka.KafkaWriter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -35,6 +36,14 @@ public class AsyncServerHandler extends SimpleChannelInboundHandler<HttpRequest>
     private final String topic = "collector_event";
     private final KafkaWriter kafkaWriter = new KafkaWriter(kafkaBroker);
 
+    private final Executor decodeExecutor = new BackPressureExecutor("decodeExecutor", 1, 2, 1024, 1024, 1);
+    private final Executor ectExecutor = new BackPressureExecutor("ectExecutor", 1, 8, 1024, 1024, 1);
+    private final Executor senderExecutor = new BackPressureExecutor("senderExecutor", 1, 2, 1024, 1024, 1);
+
+
+//    final private Executor decoderExecutor = ExecutorHelper.createExecutor(2, "decoder");
+//    final private Executor ectExecutor = ExecutorHelper.createExecutor(8, "ect");
+//    final private Executor sendExecutor = ExecutorHelper.createExecutor(2, "send");
 
     // step1: decode message
 
@@ -115,11 +124,6 @@ public class AsyncServerHandler extends SimpleChannelInboundHandler<HttpRequest>
         response.headers().set("Access-Control-Allow-Credentials", "true");
     }
 
-
-    final private Executor decoderExecutor = ExecutorHelper.createExecutor(2, "decoder");
-    final private Executor ectExecutor = ExecutorHelper.createExecutor(8, "ect");
-    final private Executor sendExecutor = ExecutorHelper.createExecutor(2, "send");
-
     // inner static helper class
     private static class ReferenceController {
         private final ChannelHandlerContext context;
@@ -152,9 +156,9 @@ public class AsyncServerHandler extends SimpleChannelInboundHandler<HttpRequest>
         referenceController.retain();
 
         CompletableFuture
-                .supplyAsync(() -> this.decode(context, httpRequest), this.decoderExecutor)
+                .supplyAsync(() -> this.decode(context, httpRequest), this.decodeExecutor)
                 .thenApplyAsync(e -> this.doExtractCleanTransform(context, httpRequest, e), this.ectExecutor)
-                .thenApplyAsync(e -> this.send(context, httpRequest, e), this.sendExecutor)
+                .thenApplyAsync(e -> this.send(context, httpRequest, e), this.senderExecutor)
                 .thenAccept(e -> referenceController.release())
                 .exceptionally(ex -> {
                     try {
