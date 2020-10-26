@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -80,66 +81,145 @@ public class BackPressureExecutor implements ExecutorService {
 
     @Override
     public void shutdown() {
-
+        for(ExecutorService executor: executors) {
+            executor.shutdown();
+        }
     }
 
     @Override
     public List<Runnable> shutdownNow() {
-        return null;
+        List<Runnable> results = new ArrayList<>();
+        for (ExecutorService executor: executors) {
+            results.addAll(executor.shutdownNow());
+        }
+        return results;
     }
 
     @Override
     public boolean isShutdown() {
-        return false;
+        for(ExecutorService executor: executors) {
+            if(!executor.isShutdown()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
     public boolean isTerminated() {
-        return false;
+        for(ExecutorService executor: executors) {
+            if(!executor.isTerminated()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
     public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-        return false;
+        for(ExecutorService executor: executors) {
+            if(!executor.awaitTermination(timeout, unit)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
     public <T> Future<T> submit(Callable<T> task) {
-        return null;
+        boolean rejected;
+        Future<T> future = null;
+        do {
+            try {
+                rejected = false;
+                future = executors.get(partitioner.getPartition()).submit(task);
+            } catch (RejectedExecutionException e) {
+                rejected = true;
+                try {
+                    TimeUnit.MILLISECONDS.sleep(rejectSleepMills);
+                } catch (InterruptedException e1) {
+                    logger.error("Reject sleep has been interrupted", e1);
+                }
+            }
+        } while (rejected);
+        return future;
     }
 
     @Override
     public <T> Future<T> submit(Runnable task, T result) {
-        return null;
+        boolean rejected;
+        Future<T> future = null;
+        do {
+            try {
+                rejected = false;
+                future = executors.get(partitioner.getPartition()).submit(task, result);
+            } catch (RejectedExecutionException e) {
+                rejected = true;
+                try {
+                    TimeUnit.MILLISECONDS.sleep(rejectSleepMills);
+                } catch (InterruptedException e1) {
+                    logger.error("Reject sleep has been interrupted", e1);
+                }
+            }
+        } while (rejected);
+        return future;
     }
 
     @Override
     public Future<?> submit(Runnable task) {
-        return null;
+        boolean rejected;
+        Future<?> future = null;
+        do {
+            try {
+                rejected = false;
+                future = executors.get(partitioner.getPartition()).submit(task);
+            } catch (RejectedExecutionException e) {
+                rejected = true;
+                try {
+                    TimeUnit.MILLISECONDS.sleep(rejectSleepMills);
+                } catch (InterruptedException e1) {
+                    logger.error("Reject sleep has been interrupted", e1);
+                }
+            }
+        } while (rejected);
+        return future;
     }
 
     @Override
     public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException {
-        return null;
+        throw new NotImplementedException();
     }
 
     @Override
     public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException {
-        return null;
+        throw new NotImplementedException();
     }
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException {
-        return null;
+        throw new NotImplementedException();
     }
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-        return null;
+        throw new NotImplementedException();
     }
 
     @Override
     public void execute(Runnable command) {
-
+        boolean rejected;
+        do {
+            try {
+                rejected = false;
+                executors.get(partitioner.getPartition()).execute(command);
+            } catch (RejectedExecutionException e) {
+                rejected = true;
+                try {
+                    TimeUnit.MILLISECONDS.sleep(rejectSleepMills);
+                } catch (InterruptedException e1) {
+                    logger.warn("Reject sleep has been interrupted.", e1);
+                }
+            }
+        } while (rejected);
     }
 }
