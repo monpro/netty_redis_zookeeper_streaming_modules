@@ -53,10 +53,22 @@ public class FileNioUse {
                 fileOutputStream = new FileOutputStream(destFile);
                 inChannel = fileInputStream.getChannel();
                 outChannel = fileOutputStream.getChannel();
+
+                long size = inChannel.size();
+                long pos = 0;
+                long count = 0;
+
+                // directly transfer bytes between channels
+                while (pos < size) {
+                    count = size - pos > 2048 ? 2048: size - pos;
+                    pos += outChannel.transferFrom(inChannel, pos, count);
+                }
+                /**
+                // use buffer in the middle
+                // inputChannel read data to buffer - write data to output channel
+                // from buffer
                 ByteBuffer byteBuffer = ByteBuffer.allocate(2048);
-                
                 int length = inChannel.read(byteBuffer);
-                
                 while (length != -1) {
                     byteBuffer.flip();
                     int outLength = 0;
@@ -66,6 +78,7 @@ public class FileNioUse {
                     length = inChannel.read(byteBuffer);
                     byteBuffer.clear();
                 }
+                 **/
                 outChannel.force(true);
             }
             finally {
