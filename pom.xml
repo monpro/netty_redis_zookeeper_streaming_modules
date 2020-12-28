@@ -9,6 +9,7 @@
     <version>1.0-SNAPSHOT</version>
     <modules>
         <module>streaming</module>
+        <module>nio</module>
     </modules>
     <packaging>pom</packaging>
     <!-- 依赖版本集中管理 -->
@@ -111,8 +112,18 @@
             <artifactId>commons-pool2</artifactId>
             <version>2.6.0</version>
         </dependency>
-
-
+        <!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-api -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.5</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.3</version>
+            <scope>runtime</scope>
+        </dependency>
     </dependencies>
     
 </project>
