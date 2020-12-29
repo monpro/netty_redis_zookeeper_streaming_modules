@@ -35,7 +35,7 @@ public class NettyDiscardServer {
             @Override
             protected void initChannel(SocketChannel socketChannel) throws Exception {
                 // it should add a handler
-                socketChannel.pipeline().addLast(null);
+                socketChannel.pipeline().addLast(new NettyDiscardHandler());
             }
         });
 
